@@ -1,56 +1,66 @@
 import streamlit as st
+import numpy as np
+from scipy.constants import R
 
-# Título do aplicativo
-st.title('Calculadora de Propriedades Termodinâmicas')
+def calcular_gas_ideal(P, V, n, T):
+    """Calcula propriedades do gás ideal"""
+    R_val = R  # Constante universal dos gases em J/(mol·K)
+    
+    # Equação dos gases ideais: PV = nRT
+    if P is None:
+        P = (n * R_val * T) / V
+    elif V is None:
+        V = (n * R_val * T) / P
+    elif n is None:
+        n = (P * V) / (R_val * T)
+    elif T is None:
+        T = (P * V) / (n * R_val)
+        
+    # Energia interna (gás monoatômico ideal)
+    U = (3/2) * n * R_val * T
+    
+    # Entalpia
+    H = U + P * V
+    
+    return P, V, n, T, U, H
 
-st.write('Todas as entradas e saídas estão em unidades do SI.')
+def main():
+    st.title("Calculadora de Propriedades Termodinâmicas")
+    st.write("Insira os valores no Sistema Internacional (SI)")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        P = st.number_input("Pressão (Pa)", value=None, placeholder="Digite a pressão")
+        V = st.number_input("Volume (m³)", value=None, placeholder="Digite o volume")
+    
+    with col2:
+        n = st.number_input("Número de mols", value=None, placeholder="Digite o número de mols")
+        T = st.number_input("Temperatura (K)", value=None, placeholder="Digite a temperatura")
+    
+    # Verifica se apenas uma variável está faltando
+    valores = [P, V, n, T]
+    if valores.count(None) != 1:
+        st.warning("Por favor, deixe exatamente uma variável em branco para calcular")
+        return
+    
+    if st.button("Calcular"):
+        P, V, n, T, U, H = calcular_gas_ideal(P, V, n, T)
+        
+        st.write("### Resultados:")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.write(f"Pressão: {P:.2f} Pa")
+            st.write(f"Volume: {V:.6f} m³")
+        
+        with col2:
+            st.write(f"Número de mols: {n:.4f}")
+            st.write(f"Temperatura: {T:.2f} K")
+        
+        with col3:
+            st.write(f"Energia Interna: {U:.2f} J")
+            st.write(f"Entalpia: {H:.2f} J")
 
-# Constante dos gases ideais (J/(mol·K))
-R = 8.314462618
-
-# Seleciona a variável a ser calculada
-opcao = st.selectbox('Selecione a variável que deseja calcular:', ('Pressão (P)', 'Volume (V)', 'Temperatura (T)', 'Quantidade de substância (n)'))
-
-if opcao == 'Pressão (P)':
-    V = st.number_input('Insira o Volume (V) em metros cúbicos (m³):', min_value=0.0, format="%f")
-    n = st.number_input('Insira a Quantidade de Substância (n) em moles (mol):', min_value=0.0, format="%f")
-    T = st.number_input('Insira a Temperatura (T) em Kelvin (K):', min_value=0.0, format="%f")
-    if st.button('Calcular Pressão'):
-        if V > 0:
-            P = (n * R * T) / V
-            st.write(f'Pressão Calculada (P): {P} Pascals (Pa)')
-        else:
-            st.write('O Volume deve ser maior que zero.')
-
-elif opcao == 'Volume (V)':
-    P = st.number_input('Insira a Pressão (P) em Pascals (Pa):', min_value=0.0, format="%f")
-    n = st.number_input('Insira a Quantidade de Substância (n) em moles (mol):', min_value=0.0, format="%f")
-    T = st.number_input('Insira a Temperatura (T) em Kelvin (K):', min_value=0.0, format="%f")
-    if st.button('Calcular Volume'):
-        if P > 0:
-            V = (n * R * T) / P
-            st.write(f'Volume Calculado (V): {V} metros cúbicos (m³)')
-        else:
-            st.write('A Pressão deve ser maior que zero.')
-
-elif opcao == 'Temperatura (T)':
-    P = st.number_input('Insira a Pressão (P) em Pascals (Pa):', min_value=0.0, format="%f")
-    V = st.number_input('Insira o Volume (V) em metros cúbicos (m³):', min_value=0.0, format="%f")
-    n = st.number_input('Insira a Quantidade de Substância (n) em moles (mol):', min_value=0.0, format="%f")
-    if st.button('Calcular Temperatura'):
-        if n > 0:
-            T = (P * V) / (n * R)
-            st.write(f'Temperatura Calculada (T): {T} Kelvin (K)')
-        else:
-            st.write('A Quantidade de Substância deve ser maior que zero.')
-
-elif opcao == 'Quantidade de substância (n)':
-    P = st.number_input('Insira a Pressão (P) em Pascals (Pa):', min_value=0.0, format="%f")
-    V = st.number_input('Insira o Volume (V) em metros cúbicos (m³):', min_value=0.0, format="%f")
-    T = st.number_input('Insira a Temperatura (T) em Kelvin (K):', min_value=0.0, format="%f")
-    if st.button('Calcular Quantidade de Substância'):
-        if T > 0:
-            n = (P * V) / (R * T)
-            st.write(f'Quantidade de Substância Calculada (n): {n} moles (mol)')
-        else:
-            st.write('A Temperatura deve ser maior que zero.')
+if __name__ == "__main__":
+    main()
