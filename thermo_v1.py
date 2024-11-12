@@ -1,64 +1,56 @@
 import streamlit as st
-from math import pow
 
 # Título do aplicativo
-st.title("Calculadora de Propriedades Termodinâmicas")
+st.title('Calculadora de Propriedades Termodinâmicas')
 
-# Seleção do fluido
-fluido = st.selectbox("Selecione o fluido:", ["Air", "Water", "R134a", "CO2", "Ammonia"])
+st.write('Todas as entradas e saídas estão em unidades do SI.')
 
-# Seleção das propriedades conhecidas
-st.header("Propriedades Conhecidas")
-input_tipo = st.radio("Escolha o tipo de entrada: ", [
-    "Pressão e Temperatura",
-    "Temperatura e Volume Específico",
-    "Pressão e Entalpia",
-])
+# Constante dos gases ideais (J/(mol·K))
+R = 8.314462618
 
-# Inputs e cálculos
-pressao = None
-temperatura = None
-volume_especifico = None
-entalpia = None
-energia_interna = None
+# Seleciona a variável a ser calculada
+opcao = st.selectbox('Selecione a variável que deseja calcular:', ('Pressão (P)', 'Volume (V)', 'Temperatura (T)', 'Quantidade de substância (n)'))
 
-if input_tipo == "Pressão e Temperatura":
-    pressao = st.number_input("Pressão (Pa):", min_value=0.01, format="%.2f")
-    temperatura = st.number_input("Temperatura (K):", min_value=0.01, format="%.2f")
-    if pressao > 0 and temperatura > 0:
-        # Utilizando aproximação de gás ideal
-        R = 287.05  # Constante do gás ideal para ar (J/(kg*K))
-        volume_especifico = R * temperatura / pressao
-        energia_interna = 1.5 * R * temperatura  # Aproximação para energia interna de gás ideal monoatômico
-        entalpia = 2.5 * R * temperatura  # Aproximação para entalpia de gás ideal monoatômico
+if opcao == 'Pressão (P)':
+    V = st.number_input('Insira o Volume (V) em metros cúbicos (m³):', min_value=0.0, format="%f")
+    n = st.number_input('Insira a Quantidade de Substância (n) em moles (mol):', min_value=0.0, format="%f")
+    T = st.number_input('Insira a Temperatura (T) em Kelvin (K):', min_value=0.0, format="%f")
+    if st.button('Calcular Pressão'):
+        if V > 0:
+            P = (n * R * T) / V
+            st.write(f'Pressão Calculada (P): {P} Pascals (Pa)')
+        else:
+            st.write('O Volume deve ser maior que zero.')
 
-elif input_tipo == "Temperatura e Volume Específico":
-    temperatura = st.number_input("Temperatura (K):", min_value=0.01, format="%.2f")
-    volume_especifico = st.number_input("Volume Específico (m3/kg):", min_value=0.01, format="%.4f")
-    if temperatura > 0 and volume_especifico > 0:
-        # Utilizando aproximação de gás ideal
-        R = 287.05  # Constante do gás ideal para ar (J/(kg*K))
-        pressao = (R * temperatura) / volume_especifico
-        energia_interna = 1.5 * R * temperatura  # Aproximação para energia interna de gás ideal monoatômico
-        entalpia = 2.5 * R * temperatura  # Aproximação para entalpia de gás ideal monoatômico
+elif opcao == 'Volume (V)':
+    P = st.number_input('Insira a Pressão (P) em Pascals (Pa):', min_value=0.0, format="%f")
+    n = st.number_input('Insira a Quantidade de Substância (n) em moles (mol):', min_value=0.0, format="%f")
+    T = st.number_input('Insira a Temperatura (T) em Kelvin (K):', min_value=0.0, format="%f")
+    if st.button('Calcular Volume'):
+        if P > 0:
+            V = (n * R * T) / P
+            st.write(f'Volume Calculado (V): {V} metros cúbicos (m³)')
+        else:
+            st.write('A Pressão deve ser maior que zero.')
 
-elif input_tipo == "Pressão e Entalpia":
-    pressao = st.number_input("Pressão (Pa):", min_value=0.01, format="%.2f")
-    entalpia = st.number_input("Entalpia (J/kg):", min_value=0.01, format="%.2f")
-    if pressao > 0 and entalpia > 0:
-        # Utilizando aproximação de gás ideal
-        R = 287.05  # Constante do gás ideal para ar (J/(kg*K))
-        temperatura = entalpia / (2.5 * R)  # Aproximação para temperatura de gás ideal monoatômico
-        volume_especifico = R * temperatura / pressao
-        energia_interna = 1.5 * R * temperatura  # Aproximação para energia interna de gás ideal monoatômico
+elif opcao == 'Temperatura (T)':
+    P = st.number_input('Insira a Pressão (P) em Pascals (Pa):', min_value=0.0, format="%f")
+    V = st.number_input('Insira o Volume (V) em metros cúbicos (m³):', min_value=0.0, format="%f")
+    n = st.number_input('Insira a Quantidade de Substância (n) em moles (mol):', min_value=0.0, format="%f")
+    if st.button('Calcular Temperatura'):
+        if n > 0:
+            T = (P * V) / (n * R)
+            st.write(f'Temperatura Calculada (T): {T} Kelvin (K)')
+        else:
+            st.write('A Quantidade de Substância deve ser maior que zero.')
 
-# Exibindo resultados se todos os valores estiverem definidos
-if None not in [pressao, temperatura, volume_especifico, entalpia, energia_interna]:
-    st.write(f"Pressão: {pressao:.2f} Pa")
-    st.write(f"Temperatura: {temperatura:.2f} K")
-    st.write(f"Volume Específico: {volume_especifico:.4f} m3/kg")
-    st.write(f"Energia Interna: {energia_interna:.2f} J/kg")
-    st.write(f"Entalpia: {entalpia:.2f} J/kg")
-
-# Informação adicional
-st.write("\n\nAs propriedades são calculadas utilizando aproximações de gás ideal.")
+elif opcao == 'Quantidade de substância (n)':
+    P = st.number_input('Insira a Pressão (P) em Pascals (Pa):', min_value=0.0, format="%f")
+    V = st.number_input('Insira o Volume (V) em metros cúbicos (m³):', min_value=0.0, format="%f")
+    T = st.number_input('Insira a Temperatura (T) em Kelvin (K):', min_value=0.0, format="%f")
+    if st.button('Calcular Quantidade de Substância'):
+        if T > 0:
+            n = (P * V) / (R * T)
+            st.write(f'Quantidade de Substância Calculada (n): {n} moles (mol)')
+        else:
+            st.write('A Temperatura deve ser maior que zero.')
