@@ -104,6 +104,31 @@ NASA_COEF = {
     }
 }
 
+# Dicionário para conversões de unidades
+UNIDADES = {
+    'temperatura': {
+        'K': {'label': 'Kelvin (K)', 'to_SI': lambda x: x, 'from_SI': lambda x: x},
+        'C': {'label': 'Celsius (°C)', 'to_SI': lambda x: x + 273.15, 'from_SI': lambda x: x - 273.15}
+    },
+    'pressao': {
+        'Pa': {'label': 'Pascal (Pa)', 'to_SI': lambda x: x, 'from_SI': lambda x: x},
+        'kPa': {'label': 'Kilopascal (kPa)', 'to_SI': lambda x: x*1000, 'from_SI': lambda x: x/1000},
+        'bar': {'label': 'Bar (bar)', 'to_SI': lambda x: x*100000, 'from_SI': lambda x: x/100000}
+    },
+    'energia': {
+        'J/kg': {'label': 'Joule por kg (J/kg)', 'to_SI': lambda x: x, 'from_SI': lambda x: x},
+        'kJ/kg': {'label': 'Kilojoule por kg (kJ/kg)', 'to_SI': lambda x: x*1000, 'from_SI': lambda x: x/1000}
+    },
+    'volume': {
+        'm³/kg': {'label': 'm³/kg', 'to_SI': lambda x: x, 'from_SI': lambda x: x},
+        'cm³/g': {'label': 'cm³/g', 'to_SI': lambda x: x/1000, 'from_SI': lambda x: x*1000}
+    },
+    'entropia': {
+        'J/kg·K': {'label': 'J/kg·K', 'to_SI': lambda x: x, 'from_SI': lambda x: x},
+        'kJ/kg·K': {'label': 'kJ/kg·K', 'to_SI': lambda x: x*1000, 'from_SI': lambda x: x/1000}
+    }
+}
+
 
 def calc_propriedades_base(T, P, gas):
     """Calcula as propriedades básicas usando correlações NASA"""
@@ -192,49 +217,86 @@ def main():
     # Seleção do gás
     gas = st.selectbox("Selecione o gás", list(NASA_COEF.keys()))
     
-    # Seleção das variáveis independentes
-    variaveis = ['T', 'P', 'v', 'h', 's']
-    nomes_variaveis = {
-        'T': 'Temperatura [K]',
-        'P': 'Pressão [Pa]',
-        'v': 'Volume específico [m³/kg]',
-        'h': 'Entalpia específica [J/kg]',
-        's': 'Entropia específica [J/kg·K]'
+    # Configuração das unidades
+    st.sidebar.header("Configuração de Unidades")
+    unidade_temp = st.sidebar.selectbox("Unidade de Temperatura", 
+                                      list(UNIDADES['temperatura'].keys()),
+                                      format_func=lambda x: UNIDADES['temperatura'][x]['label'])
+    unidade_press = st.sidebar.selectbox("Unidade de Pressão", 
+                                       list(UNIDADES['pressao'].keys()),
+                                       format_func=lambda x: UNIDADES['pressao'][x]['label'])
+    unidade_energia = st.sidebar.selectbox("Unidade de Energia", 
+                                         list(UNIDADES['energia'].keys()),
+                                         format_func=lambda x: UNIDADES['energia'][x]['label'])
+    unidade_volume = st.sidebar.selectbox("Unidade de Volume", 
+                                        list(UNIDADES['volume'].keys()),
+                                        format_func=lambda x: UNIDADES['volume'][x]['label'])
+    unidade_entropia = st.sidebar.selectbox("Unidade de Entropia", 
+                                          list(UNIDADES['entropia'].keys()),
+                                          format_func=lambda x: UNIDADES['entropia'][x]['label'])
+    
+    # Definição das variáveis com suas unidades correspondentes
+    variaveis = {
+        'T': {'nome': 'Temperatura', 'unidade': unidade_temp, 'tipo': 'temperatura'},
+        'P': {'nome': 'Pressão', 'unidade': unidade_press, 'tipo': 'pressao'},
+        'v': {'nome': 'Volume específico', 'unidade': unidade_volume, 'tipo': 'volume'},
+        'h': {'nome': 'Entalpia específica', 'unidade': unidade_energia, 'tipo': 'energia'},
+        's': {'nome': 'Entropia específica', 'unidade': unidade_entropia, 'tipo': 'entropia'}
     }
     
     col1, col2 = st.columns(2)
     
     with col1:
-        var1 = st.selectbox("Primeira variável:", variaveis)
-        val1 = st.number_input(f"Valor de {nomes_variaveis[var1]}", value=None)
+        var1 = st.selectbox("Primeira variável:", list(variaveis.keys()),
+                           format_func=lambda x: variaveis[x]['nome'])
+        val1 = st.number_input(
+            f"Valor de {variaveis[var1]['nome']} [{variaveis[var1]['unidade']}]",
+            value=None)
     
     with col2:
         var2 = st.selectbox("Segunda variável:", 
-                           [v for v in variaveis if v != var1])
-        val2 = st.number_input(f"Valor de {nomes_variaveis[var2]}", value=None)
+                           [v for v in variaveis.keys() if v != var1],
+                           format_func=lambda x: variaveis[x]['nome'])
+        val2 = st.number_input(
+            f"Valor de {variaveis[var2]['nome']} [{variaveis[var2]['unidade']}]",
+            value=None)
     
     if st.button("Calcular") and val1 is not None and val2 is not None:
-        resultado = resolver_estado(var1, val1, var2, val2, gas)
+        # Converter valores para SI
+        val1_SI = UNIDADES[variaveis[var1]['tipo']][variaveis[var1]['unidade']]['to_SI'](val1)
+        val2_SI = UNIDADES[variaveis[var2]['tipo']][variaveis[var2]['unidade']]['to_SI'](val2)
+        
+        resultado = resolver_estado(var1, val1_SI, var2, val2_SI, gas)
         
         if resultado is not None:
             T, P, v, u, h, s, cp, cv = resultado
+            
+            # Converter resultados para unidades selecionadas
+            T_display = UNIDADES['temperatura'][unidade_temp]['from_SI'](T)
+            P_display = UNIDADES['pressao'][unidade_press]['from_SI'](P)
+            v_display = UNIDADES['volume'][unidade_volume]['from_SI'](v)
+            u_display = UNIDADES['energia'][unidade_energia]['from_SI'](u)
+            h_display = UNIDADES['energia'][unidade_energia]['from_SI'](h)
+            s_display = UNIDADES['entropia'][unidade_entropia]['from_SI'](s)
+            cp_display = UNIDADES['energia'][unidade_energia]['from_SI'](cp)
+            cv_display = UNIDADES['energia'][unidade_energia]['from_SI'](cv)
             
             st.write("### Resultados:")
             col1, col2 = st.columns(2)
             
             with col1:
                 st.write("#### Propriedades do Estado:")
-                st.write(f"Temperatura (T): {T:.2f} K")
-                st.write(f"Pressão (P): {P:.2f} Pa")
-                st.write(f"Volume específico (v): {v:.6f} m³/kg")
-                st.write(f"Energia interna (u): {u:.2f} J/kg")
-                st.write(f"Entalpia (h): {h:.2f} J/kg")
-                st.write(f"Entropia (s): {s:.2f} J/kg·K")
+                st.write(f"Temperatura: {T_display:.2f} {unidade_temp}")
+                st.write(f"Pressão: {P_display:.2f} {unidade_press}")
+                st.write(f"Volume específico: {v_display:.6f} {unidade_volume}")
+                st.write(f"Energia interna: {u_display:.2f} {unidade_energia}")
+                st.write(f"Entalpia: {h_display:.2f} {unidade_energia}")
+                st.write(f"Entropia: {s_display:.2f} {unidade_entropia}")
             
             with col2:
                 st.write("#### Calores Específicos:")
-                st.write(f"cp: {cp:.2f} J/kg·K")
-                st.write(f"cv: {cv:.2f} J/kg·K")
+                st.write(f"cp: {cp_display:.2f} {unidade_entropia}")
+                st.write(f"cv: {cv_display:.2f} {unidade_entropia}")
                 st.write(f"γ (cp/cv): {cp/cv:.3f}")
 
 if __name__ == "__main__":
