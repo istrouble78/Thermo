@@ -1,4 +1,2 @@
-streamlit
-CoolProp
-PropsSI
-math
+streamlit==1.22.0
+coolprop==6.4.1
