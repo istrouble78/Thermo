@@ -1,5 +1,8 @@
 import streamlit as st
-from CoolProp.CoolProp import PropsSI
+try:
+    from CoolProp.CoolProp import PropsSI
+except ImportError:
+    st.error("Erro ao importar CoolProp. Por favor, verifique se a biblioteca está instalada corretamente.")
 
 # Título do aplicativo
 st.title("Calculadora de Propriedades Termodinâmicas")
