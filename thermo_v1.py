@@ -42,6 +42,9 @@ if input_tipo == "Pressão e Temperatura":
             st.write(f"Entalpia: {entalpia:.2f} J/kg")
         except ValueError as e:
             st.error(f"Erro ao calcular propriedades: {e}")
+        except Exception as e:
+            st.error(f"Erro inesperado: {e}")
+            st.experimental_rerun()
 
 elif input_tipo == "Temperatura e Volume Específico":
     temperatura = st.number_input("Temperatura (K):", min_value=0.01, format="%.2f")
@@ -63,6 +66,9 @@ elif input_tipo == "Temperatura e Volume Específico":
             st.write(f"Entalpia: {entalpia:.2f} J/kg")
         except ValueError as e:
             st.error(f"Erro ao calcular propriedades: {e}")
+        except Exception as e:
+            st.error(f"Erro inesperado: {e}")
+            st.experimental_rerun()
 
 elif input_tipo == "Pressão e Entalpia":
     pressao = st.number_input("Pressão (Pa):", min_value=0.01, format="%.2f")
@@ -84,6 +90,9 @@ elif input_tipo == "Pressão e Entalpia":
             st.write(f"Energia Interna: {energia_interna:.2f} J/kg")
         except ValueError as e:
             st.error(f"Erro ao calcular propriedades: {e}")
+        except Exception as e:
+            st.error(f"Erro inesperado: {e}")
+            st.experimental_rerun()
 
 # Informação adicional
 st.write("\n\nAs propriedades são calculadas usando a biblioteca CoolProp quando disponível, caso contrário, uma aproximação de gás ideal é utilizada.")
