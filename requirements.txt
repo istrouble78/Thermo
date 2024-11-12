@@ -1,4 +1,4 @@
 streamlit
-CoolProp.CoolProp
+CoolProp
 PropsSI
 math
