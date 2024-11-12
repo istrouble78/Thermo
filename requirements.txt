@@ -1,4 +1,4 @@
 streamlit==1.22.0
-coolprop==6.4.1
+math
 numpy
 pandas
