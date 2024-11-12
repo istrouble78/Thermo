@@ -184,6 +184,7 @@ def resolver_estado(var1_nome, var1_valor, var2_nome, var2_valor, gas):
         return None
 
 def main():
+    st.image("logo_ufpr.jpg", use_column_width=True)  # Altere para o caminho da imagem ou URL
     st.title("Calculadora de Propriedades Termodinâmicas")
     st.write("Ferramenta desenvolvida pelo Prof. Strobel para a disciplina TMEC005 - Termodinâmica, do curso de Engenharia Mecânica da UFPR (2024)")
     st.caption("Propriedades baseadas no trabalho 'NASA Glenn Coefficients for Thermodynamic Properties of Individual Species', McBride, B. J., & Gordon, S. (1996). NASA Reference Publication 1311. NASA Glenn Research Center, Cleveland, Ohio. Disponível em: [NASA Technical Reports Server (NTRS) https://ntrs.nasa.gov/]")
