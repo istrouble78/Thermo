@@ -102,7 +102,8 @@ def resolver_estado(var1_nome, var1_valor, var2_nome, var2_valor, gas):
         return None
 
 def main():
-    st.title("Calculadora de Propriedades Termodinâmicas (Estilo EES)")
+    st.title("Calculadora de Propriedades Termodinâmicas")
+    st.caption("Ferramenta desenvolvida pelo Prof. Strobel para a disciplina TMEC005 - Termodinâmica, do curso de Engenharia Mecânica da UFPR (2024)")
     st.write("Propriedades baseadas em McBride et al. (2002)")
     
     # Seleção do gás
