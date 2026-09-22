@@ -36,7 +36,9 @@ CACHE_FILE = Path(__file__).with_name("lotofacil_historico.csv")
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; LotofacilAnalise/1.0)"}
 
 TOTAL_DEZENAS = 25
-DEZENAS_POR_JOGO = 15
+DEZENAS_POR_JOGO = 15  # dezenas sorteadas em cada concurso
+MIN_DEZENAS_APOSTA = 15
+MAX_DEZENAS_APOSTA = 20  # a Lotofácil aceita apostas de 15 a 20 números
 
 # Layout da cartela oficial da Lotofácil (5 colunas x 5 linhas)
 COLUNAS_CARTELA = {
@@ -259,10 +261,12 @@ def analisar(lista_concursos, janela_recente=25):
 # Geração da sugestão de jogo
 # --------------------------------------------------------------------------
 
-def _sugestao_combinada(resultado, pesos=(0.35, 0.45, 0.20)):
+def _sugestao_combinada(resultado, pesos=(0.35, 0.45, 0.20), quantidade=DEZENAS_POR_JOGO):
     """Combina frequência histórica, tendência recente e atraso em um score
-    por dezena, seleciona as 15 melhores e ajusta a soma para a faixa mais
-    comum historicamente (média +/- 1 desvio padrão)."""
+    por dezena. Monta um núcleo de 15 dezenas ajustado pela soma histórica
+    e, se a aposta pedida tiver mais de 15 números (desdobramento de 16 a
+    20 dezenas, como a Lotofácil permite), completa com as próximas
+    melhores dezenas do ranking."""
     freq_total = resultado["freq_total"]
     freq_recente = resultado["freq_recente"]
     atraso = resultado["atraso"]
@@ -282,11 +286,16 @@ def _sugestao_combinada(resultado, pesos=(0.35, 0.45, 0.20)):
         pontuacao[dezena] = score
 
     ranking = sorted(pontuacao, key=lambda d: pontuacao[d], reverse=True)
-    sugestao = ranking[:DEZENAS_POR_JOGO]
 
-    sugestao = _ajustar_soma(
-        sugestao, ranking, resultado["soma_media"], resultado["soma_desvio"]
+    nucleo = _ajustar_soma(
+        ranking[:DEZENAS_POR_JOGO], ranking, resultado["soma_media"], resultado["soma_desvio"]
     )
+
+    if quantidade > DEZENAS_POR_JOGO:
+        extras = [d for d in ranking if d not in nucleo][: quantidade - DEZENAS_POR_JOGO]
+        sugestao = nucleo + extras
+    else:
+        sugestao = nucleo[:quantidade]
 
     return sorted(sugestao), pontuacao
 
@@ -340,19 +349,19 @@ def _ajustar_soma(sugestao, ranking, media_soma, desvio_soma, max_iter=40):
     return sugestao
 
 
-def gerar_sugestoes(resultado):
+def gerar_sugestoes(resultado, quantidade=DEZENAS_POR_JOGO):
     ranking_total = [d for d, _ in resultado["freq_total"].most_common(TOTAL_DEZENAS)]
     ranking_recente = [d for d, _ in resultado["freq_recente"].most_common(TOTAL_DEZENAS)]
     ranking_atraso = sorted(
         range(1, TOTAL_DEZENAS + 1), key=lambda d: -resultado["atraso"].get(d, 0)
     )
 
-    sugestao_principal, pontuacao = _sugestao_combinada(resultado)
+    sugestao_principal, pontuacao = _sugestao_combinada(resultado, quantidade=quantidade)
 
     alternativas = {
-        "Mais quentes (frequência histórica)": sorted(ranking_total[:DEZENAS_POR_JOGO]),
-        "Tendência recente": sorted(ranking_recente[:DEZENAS_POR_JOGO]),
-        "Números atrasados": sorted(ranking_atraso[:DEZENAS_POR_JOGO]),
+        "Mais quentes (frequência histórica)": sorted(ranking_total[:quantidade]),
+        "Tendência recente": sorted(ranking_recente[:quantidade]),
+        "Números atrasados": sorted(ranking_atraso[:quantidade]),
     }
 
     return sugestao_principal, pontuacao, alternativas
@@ -362,7 +371,7 @@ def gerar_sugestoes(resultado):
 # Relatório
 # --------------------------------------------------------------------------
 
-def montar_relatorio(resultado, lista_concursos):
+def montar_relatorio(resultado, lista_concursos, quantidade=DEZENAS_POR_JOGO):
     total = resultado["total_concursos"]
     janela_recente = resultado["janela_recente"]
     primeiro, ultimo = lista_concursos[0][0], lista_concursos[-1][0]
@@ -414,20 +423,27 @@ def montar_relatorio(resultado, lista_concursos):
     for coluna, qtd in sorted(resultado["freq_coluna"].items()):
         linhas.append(f"  Coluna {coluna} {COLUNAS_CARTELA[coluna]} -> {qtd} ocorrências")
 
-    sugestao, _pontuacao, alternativas = gerar_sugestoes(resultado)
+    sugestao, _pontuacao, alternativas = gerar_sugestoes(resultado, quantidade=quantidade)
 
     linhas.append("\n" + "=" * 70)
-    linhas.append("SUGESTÃO PRINCIPAL PARA O PRÓXIMO CONCURSO")
+    linhas.append(f"SUGESTÃO PRINCIPAL PARA O PRÓXIMO CONCURSO ({quantidade} números)")
     linhas.append("=" * 70)
     linhas.append(f"  {' - '.join(f'{d:02d}' for d in sugestao)}")
     n_pares_sug = sum(1 for d in sugestao if d % 2 == 0)
     linhas.append(
-        f"  Soma: {sum(sugestao)}  |  Pares: {n_pares_sug}  |  Ímpares: {15 - n_pares_sug}"
+        f"  Soma: {sum(sugestao)}  |  Pares: {n_pares_sug}  |  "
+        f"Ímpares: {quantidade - n_pares_sug}"
     )
     linhas.append(
-        "  Critério: combina frequência histórica, tendência recente e atraso de\n"
-        "  cada dezena, com ajuste para manter a soma dentro da faixa mais comum\n"
-        "  no histórico (média +/- 1 desvio padrão)."
+        "  Critério: as 15 dezenas centrais combinam frequência histórica,\n"
+        "  tendência recente e atraso, com ajuste para manter a soma dentro da\n"
+        "  faixa mais comum no histórico (média +/- 1 desvio padrão)."
+        + (
+            f"\n  As {quantidade - DEZENAS_POR_JOGO} dezena(s) extra(s) são as próximas"
+            " melhor rankeadas pelo mesmo score."
+            if quantidade > DEZENAS_POR_JOGO
+            else ""
+        )
     )
 
     linhas.append("\n--- OUTRAS SUGESTÕES (estratégias alternativas para comparação) ---")
@@ -480,7 +496,20 @@ def main():
         "--saida", type=str, default=None,
         help="Caminho de um arquivo .txt para salvar o relatório completo."
     )
+    parser.add_argument(
+        "--quantidade", type=int, default=DEZENAS_POR_JOGO,
+        help=(
+            "Quantidade de números na aposta sugerida, de "
+            f"{MIN_DEZENAS_APOSTA} a {MAX_DEZENAS_APOSTA} (padrão: {DEZENAS_POR_JOGO}), "
+            "conforme os desdobramentos aceitos pela Lotofácil."
+        )
+    )
     args = parser.parse_args()
+
+    if not MIN_DEZENAS_APOSTA <= args.quantidade <= MAX_DEZENAS_APOSTA:
+        parser.error(
+            f"--quantidade deve estar entre {MIN_DEZENAS_APOSTA} e {MAX_DEZENAS_APOSTA}."
+        )
 
     print("=" * 70)
     print("LOTOFÁCIL - ANÁLISE ESTATÍSTICA DO HISTÓRICO E SUGESTÃO DE JOGO")
@@ -498,7 +527,7 @@ def main():
         return
 
     resultado = analisar(lista, janela_recente=args.janela_recente)
-    relatorio = montar_relatorio(resultado, lista)
+    relatorio = montar_relatorio(resultado, lista, quantidade=args.quantidade)
 
     print(relatorio)
 
