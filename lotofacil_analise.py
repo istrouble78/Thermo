@@ -16,7 +16,7 @@ exploratórios/educacionais.
 Uso:
     python lotofacil_analise.py
     python lotofacil_analise.py --forcar-download
-    python lotofacil_analise.py --apenas-ultimos 300 --saida relatorio.txt
+    python lotofacil_analise.py --apenas-ultimos 100 --saida relatorio.txt
 """
 
 import argparse
@@ -30,6 +30,13 @@ from pathlib import Path
 
 import requests
 
+try:
+    import numpy as np
+    from sklearn.neural_network import MLPClassifier
+    SKLEARN_DISPONIVEL = True
+except ImportError:
+    SKLEARN_DISPONIVEL = False
+
 API_BASE = "https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil"
 FALLBACK_BULK_URL = "https://loteriascaixa-api.herokuapp.com/api/lotofacil"
 CACHE_FILE = Path(__file__).with_name("lotofacil_historico.csv")
@@ -39,6 +46,8 @@ TOTAL_DEZENAS = 25
 DEZENAS_POR_JOGO = 15  # dezenas sorteadas em cada concurso
 MIN_DEZENAS_APOSTA = 15
 MAX_DEZENAS_APOSTA = 20  # a Lotofácil aceita apostas de 15 a 20 números
+QUANTIDADES_PADRAO = (15, 16, 17)  # tamanhos de aposta mostrados por categoria
+JANELA_NN_PADRAO = 10  # concursos usados como "memória" da rede neural
 
 # Layout da cartela oficial da Lotofácil (5 colunas x 5 linhas)
 COLUNAS_CARTELA = {
@@ -349,29 +358,113 @@ def _ajustar_soma(sugestao, ranking, media_soma, desvio_soma, max_iter=40):
     return sugestao
 
 
-def gerar_sugestoes(resultado, quantidade=DEZENAS_POR_JOGO):
+def gerar_sugestoes(resultado, quantidades=QUANTIDADES_PADRAO, pontuacao_nn=None):
+    """Para cada estratégia (combinada, mais quentes, tendência recente,
+    atrasados e, se disponível, rede neural), monta uma sugestão para cada
+    tamanho de aposta em `quantidades` (ex.: 15, 16 e 17 números).
+
+    Retorna um dict {nome_da_estrategia: {quantidade: [dezenas]}}.
+    """
     ranking_total = [d for d, _ in resultado["freq_total"].most_common(TOTAL_DEZENAS)]
     ranking_recente = [d for d, _ in resultado["freq_recente"].most_common(TOTAL_DEZENAS)]
     ranking_atraso = sorted(
         range(1, TOTAL_DEZENAS + 1), key=lambda d: -resultado["atraso"].get(d, 0)
     )
 
-    sugestao_principal, pontuacao = _sugestao_combinada(resultado, quantidade=quantidade)
+    sugestoes = {"Combinada (frequência + tendência + atraso)": {}}
+    for quantidade in quantidades:
+        jogo, _pontuacao = _sugestao_combinada(resultado, quantidade=quantidade)
+        sugestoes["Combinada (frequência + tendência + atraso)"][quantidade] = jogo
 
-    alternativas = {
-        "Mais quentes (frequência histórica)": sorted(ranking_total[:quantidade]),
-        "Tendência recente": sorted(ranking_recente[:quantidade]),
-        "Números atrasados": sorted(ranking_atraso[:quantidade]),
+    rankings_simples = {
+        "Mais quentes (frequência histórica)": ranking_total,
+        "Tendência recente": ranking_recente,
+        "Números atrasados": ranking_atraso,
     }
+    if pontuacao_nn is not None:
+        rankings_simples["Rede neural (MLP)"] = sorted(
+            pontuacao_nn, key=lambda d: pontuacao_nn[d], reverse=True
+        )
 
-    return sugestao_principal, pontuacao, alternativas
+    for nome, ranking in rankings_simples.items():
+        sugestoes[nome] = {q: sorted(ranking[:q]) for q in quantidades}
+
+    return sugestoes
+
+
+# --------------------------------------------------------------------------
+# Rede neural (MLP)
+# --------------------------------------------------------------------------
+#
+# Um palpite "baseado em rede neural" foi pedido explicitamente, mas é
+# importante ser honesto sobre o que ele é: a Lotofácil é um sorteio
+# aleatório e uniforme, sem padrão real para uma rede aprender. O modelo
+# abaixo é uma rede neural de verdade (um MLP - Multi-Layer Perceptron,
+# treinado com scikit-learn) e o treino/inferência são legítimos, mas o
+# resultado não tem nenhum motivo estatístico para superar o acaso.
+
+def _construir_dataset_nn(todos_jogos, janela):
+    """Para cada concurso a partir do (janela+1)-ésimo, a entrada é a
+    frequência de cada dezena nos `janela` concursos anteriores (normalizada
+    entre 0 e 1) e o rótulo é o vetor binário de 25 posições indicando quais
+    dezenas saíram naquele concurso (classificação multirrótulo)."""
+    X, y = [], []
+    for i in range(janela, len(todos_jogos)):
+        contagem = Counter()
+        for jogo in todos_jogos[i - janela:i]:
+            contagem.update(jogo)
+        X.append([contagem.get(d, 0) / janela for d in range(1, TOTAL_DEZENAS + 1)])
+        y.append([1 if d in todos_jogos[i] else 0 for d in range(1, TOTAL_DEZENAS + 1)])
+    return np.array(X), np.array(y)
+
+
+def treinar_rede_neural(lista_concursos, janela=JANELA_NN_PADRAO, random_state=42):
+    """Treina um MLPClassifier multirrótulo e retorna a probabilidade
+    prevista de cada dezena (1 a 25) aparecer no próximo concurso."""
+    if not SKLEARN_DISPONIVEL:
+        raise RuntimeError(
+            "scikit-learn não está instalado. Rode: pip install scikit-learn"
+        )
+
+    todos_jogos = [dezenas for _, _, dezenas in lista_concursos]
+    minimo_necessario = janela + 20
+    if len(todos_jogos) < minimo_necessario:
+        raise ValueError(
+            f"Histórico insuficiente para treinar a rede neural: "
+            f"são necessários pelo menos {minimo_necessario} concursos "
+            f"(há {len(todos_jogos)}). Aumente --apenas-ultimos/CONCURSOS_A_CONSIDERAR "
+            "ou diminua a janela da rede neural."
+        )
+
+    X, y = _construir_dataset_nn(todos_jogos, janela)
+
+    modelo = MLPClassifier(
+        hidden_layer_sizes=(64, 32),
+        activation="relu",
+        max_iter=2000,
+        random_state=random_state,
+        early_stopping=True,
+    )
+    modelo.fit(X, y)
+
+    contagem_atual = Counter()
+    for jogo in todos_jogos[-janela:]:
+        contagem_atual.update(jogo)
+    vetor_atual = np.array(
+        [[contagem_atual.get(d, 0) / janela for d in range(1, TOTAL_DEZENAS + 1)]]
+    )
+
+    probabilidades = modelo.predict_proba(vetor_atual)[0]
+    return {d: float(p) for d, p in zip(range(1, TOTAL_DEZENAS + 1), probabilidades)}
 
 
 # --------------------------------------------------------------------------
 # Relatório
 # --------------------------------------------------------------------------
 
-def montar_relatorio(resultado, lista_concursos, quantidade=DEZENAS_POR_JOGO):
+def montar_relatorio(
+    resultado, lista_concursos, quantidades=QUANTIDADES_PADRAO, pontuacao_nn=None
+):
     total = resultado["total_concursos"]
     janela_recente = resultado["janela_recente"]
     primeiro, ultimo = lista_concursos[0][0], lista_concursos[-1][0]
@@ -423,32 +516,38 @@ def montar_relatorio(resultado, lista_concursos, quantidade=DEZENAS_POR_JOGO):
     for coluna, qtd in sorted(resultado["freq_coluna"].items()):
         linhas.append(f"  Coluna {coluna} {COLUNAS_CARTELA[coluna]} -> {qtd} ocorrências")
 
-    sugestao, _pontuacao, alternativas = gerar_sugestoes(resultado, quantidade=quantidade)
+    sugestoes = gerar_sugestoes(resultado, quantidades=quantidades, pontuacao_nn=pontuacao_nn)
 
     linhas.append("\n" + "=" * 70)
-    linhas.append(f"SUGESTÃO PRINCIPAL PARA O PRÓXIMO CONCURSO ({quantidade} números)")
+    qtds_str = ", ".join(str(q) for q in quantidades)
+    linhas.append(f"SUGESTÕES PARA O PRÓXIMO CONCURSO ({qtds_str} números)")
     linhas.append("=" * 70)
-    linhas.append(f"  {' - '.join(f'{d:02d}' for d in sugestao)}")
-    n_pares_sug = sum(1 for d in sugestao if d % 2 == 0)
-    linhas.append(
-        f"  Soma: {sum(sugestao)}  |  Pares: {n_pares_sug}  |  "
-        f"Ímpares: {quantidade - n_pares_sug}"
-    )
-    linhas.append(
-        "  Critério: as 15 dezenas centrais combinam frequência histórica,\n"
-        "  tendência recente e atraso, com ajuste para manter a soma dentro da\n"
-        "  faixa mais comum no histórico (média +/- 1 desvio padrão)."
-        + (
-            f"\n  As {quantidade - DEZENAS_POR_JOGO} dezena(s) extra(s) são as próximas"
-            " melhor rankeadas pelo mesmo score."
-            if quantidade > DEZENAS_POR_JOGO
-            else ""
-        )
-    )
+    for nome, por_quantidade in sugestoes.items():
+        linhas.append(f"\n{nome}:")
+        for q, jogo in por_quantidade.items():
+            n_pares = sum(1 for d in jogo if d % 2 == 0)
+            linhas.append(
+                f"  {q} números: {' - '.join(f'{d:02d}' for d in jogo)}  "
+                f"(soma {sum(jogo)}, {n_pares}p/{q - n_pares}i)"
+            )
 
-    linhas.append("\n--- OUTRAS SUGESTÕES (estratégias alternativas para comparação) ---")
-    for nome, jogo in alternativas.items():
-        linhas.append(f"  {nome}: {' - '.join(f'{d:02d}' for d in jogo)}  (soma {sum(jogo)})")
+    if pontuacao_nn is None:
+        linhas.append(
+            "\n(Categoria 'Rede neural (MLP)' não incluída - scikit-learn "
+            "indisponível ou histórico insuficiente para treiná-la nesta execução.)"
+        )
+
+    linhas.append(
+        "\nCritério da estratégia combinada: uma pontuação por dezena que mistura\n"
+        "frequência histórica, tendência recente e atraso; o núcleo de 15 dezenas\n"
+        "é ajustado para manter a soma dentro da faixa mais comum no histórico\n"
+        "(média +/- 1 desvio padrão), e as dezenas extras (16ª, 17ª...) são as\n"
+        "próximas melhor colocadas no mesmo ranking.\n"
+        "Critério da rede neural: um MLP (perceptron multicamadas) treinado para\n"
+        "prever, a partir da frequência de cada dezena na janela de concursos mais\n"
+        "recente, a probabilidade de cada dezena sair no próximo concurso; as N\n"
+        "dezenas de maior probabilidade prevista formam a sugestão."
+    )
 
     linhas.append("\n" + "=" * 70)
     linhas.append("AVISO IMPORTANTE")
@@ -489,27 +588,43 @@ def main():
         help="Quantidade de concursos recentes usados na análise de tendência (padrão: 25)."
     )
     parser.add_argument(
-        "--apenas-ultimos", type=int, default=None,
-        help="Baixa/analisa apenas os N concursos mais recentes (útil para testes rápidos)."
+        "--apenas-ultimos", type=int, default=None, metavar="N",
+        help=(
+            "Quantos concursos anteriores considerar na análise, ex.: 100 "
+            "(baixa e analisa só os N mais recentes). Padrão: todo o histórico."
+        )
     )
     parser.add_argument(
         "--saida", type=str, default=None,
         help="Caminho de um arquivo .txt para salvar o relatório completo."
     )
     parser.add_argument(
-        "--quantidade", type=int, default=DEZENAS_POR_JOGO,
+        "--quantidades", type=str, default="15,16,17",
         help=(
-            "Quantidade de números na aposta sugerida, de "
-            f"{MIN_DEZENAS_APOSTA} a {MAX_DEZENAS_APOSTA} (padrão: {DEZENAS_POR_JOGO}), "
-            "conforme os desdobramentos aceitos pela Lotofácil."
+            "Tamanhos de aposta a sugerir para cada categoria, separados por "
+            f"vírgula, cada um entre {MIN_DEZENAS_APOSTA} e {MAX_DEZENAS_APOSTA} "
+            "(padrão: 15,16,17)."
         )
+    )
+    parser.add_argument(
+        "--janela-nn", type=int, default=JANELA_NN_PADRAO,
+        help=f"Concursos usados como janela de entrada da rede neural (padrão: {JANELA_NN_PADRAO})."
+    )
+    parser.add_argument(
+        "--sem-rede-neural", action="store_true",
+        help="Pula o treino da rede neural (mais rápido)."
     )
     args = parser.parse_args()
 
-    if not MIN_DEZENAS_APOSTA <= args.quantidade <= MAX_DEZENAS_APOSTA:
-        parser.error(
-            f"--quantidade deve estar entre {MIN_DEZENAS_APOSTA} e {MAX_DEZENAS_APOSTA}."
-        )
+    try:
+        quantidades = tuple(int(q.strip()) for q in args.quantidades.split(","))
+    except ValueError:
+        parser.error("--quantidades deve ser uma lista de números separados por vírgula, ex.: 15,16,17")
+    for q in quantidades:
+        if not MIN_DEZENAS_APOSTA <= q <= MAX_DEZENAS_APOSTA:
+            parser.error(
+                f"cada valor em --quantidades deve estar entre {MIN_DEZENAS_APOSTA} e {MAX_DEZENAS_APOSTA}."
+            )
 
     print("=" * 70)
     print("LOTOFÁCIL - ANÁLISE ESTATÍSTICA DO HISTÓRICO E SUGESTÃO DE JOGO")
@@ -527,7 +642,18 @@ def main():
         return
 
     resultado = analisar(lista, janela_recente=args.janela_recente)
-    relatorio = montar_relatorio(resultado, lista, quantidade=args.quantidade)
+
+    pontuacao_nn = None
+    if not args.sem_rede_neural:
+        try:
+            print(f"\nTreinando rede neural (janela de {args.janela_nn} concursos)...")
+            pontuacao_nn = treinar_rede_neural(lista, janela=args.janela_nn)
+        except Exception as exc:
+            print(f"Aviso: não foi possível treinar a rede neural ({exc}).")
+
+    relatorio = montar_relatorio(
+        resultado, lista, quantidades=quantidades, pontuacao_nn=pontuacao_nn
+    )
 
     print(relatorio)
 
